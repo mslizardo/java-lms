@@ -83,7 +83,7 @@ public class Loan {
     
     public void markReturned(LocalDate returnDate) {
         if(!isActive()) {
-            throw new IllegalArgumentException("This loan was already returned.");
+            throw new IllegalStateException("This loan was already returned.");
         }
         if(returnDate == null) {
             throw new IllegalArgumentException("Return date cannot be null.");
