@@ -9,5 +9,19 @@ package lms.model;
  * @author Mary
  */
 public class FacultyMember extends Member {
+    private static final int BORROWING_LIMIT = 5;
+
+    public FacultyMember(String memberID, String fullName, String contactNumber, String email, MemberStatus status) {
+        super(memberID, fullName, contactNumber, email, status);
+    }
     
+    @Override
+    public int getBorrowingLimit() {
+        return BORROWING_LIMIT;
+    }
+    
+    @Override
+    public MemberType getMemberType() {
+        return MemberType.FACULTY;
+    }
 }

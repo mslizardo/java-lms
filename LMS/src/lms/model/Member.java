@@ -15,7 +15,7 @@ public abstract class Member {
     private String email;
     private MemberStatus status;
     
-    public abstract int getBorrowingInit();
+    public abstract int getBorrowingLimit();
     public abstract MemberType getMemberType();
     
     protected Member(String memberID, String fullName, String contactNumber, String email, MemberStatus status) {
@@ -54,7 +54,7 @@ public abstract class Member {
 
     public void setContactNumber(String contactNumber) {
         String value = requireText(contactNumber, "Contact Number");
-        if(!value.matches("\\\\+?[0-9]{7,15}")) {
+        if(!value.matches("\\+?[0-9]{7,15}")) {
             throw new IllegalArgumentException(
                     "Contact number must contain from 7 to 15 digits with an optional + sign.");
         }
@@ -63,7 +63,7 @@ public abstract class Member {
 
     public void setEmail(String email) {
         String value = requireText(email, "Email");
-        if(!value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}$")) {
+        if(!value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
             throw new IllegalArgumentException("Invalid email address.");
         }
         this.email = value;
