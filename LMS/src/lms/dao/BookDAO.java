@@ -54,6 +54,22 @@ public class BookDAO {
         return Optional.empty();
     }
     
+      
+    public Optional<Book> findByID(Connection conn, String bookID) throws SQLException {
+        String sql = "SELECT * FROM books WHERE book_id = ? FOR UPDATE";
+        
+        try(PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, bookID);
+            
+            try(ResultSet rs = stmt.executeQuery()) {
+                if(rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+    
     public ArrayList<Book> findAll() throws SQLException {
         ArrayList<Book> books = new ArrayList<>();
         
@@ -87,9 +103,38 @@ public class BookDAO {
         }
     }
     
+    public boolean update(Connection conn, Book book) throws SQLException {
+        String sql = """
+                     UPDATE books 
+                     SET isbn = ?, title = ?, author = ?, category = ?, publisher = ?, publication_year = ?, total_copies = ? 
+                     WHERE book_id = ?""";
+    
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {           
+            stmt.setString(1, book.getIsbn());
+            stmt.setString(2, book.getTitle());
+            stmt.setString(3, book.getAuthor());
+            stmt.setString(4, book.getCategory());
+            stmt.setString(5, book.getPublisher());
+            stmt.setInt(6, book.getPublicationYear());
+            stmt.setInt(7, book.getTotalCopies());
+            stmt.setString(8, book.getBookID());
+            
+            return stmt.executeUpdate() > 0;
+        }
+    }
+    
     public boolean delete(String bookID) throws SQLException {
         String sql = "DELETE FROM books WHERE book_id = ?";
         try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, bookID);
+            
+            return stmt.executeUpdate() > 0;
+        }
+    }
+    
+    public boolean delete(Connection conn, String bookID) throws SQLException {
+        String sql = "DELETE FROM books WHERE book_id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, bookID);
             
             return stmt.executeUpdate() > 0;

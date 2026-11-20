@@ -4,6 +4,7 @@
  */
 package lms.dao;
 
+import com.mysql.cj.jdbc.result.ResultSetImpl;
 import lms.database.DatabaseConnection;
 import lms.model.*;
 
@@ -121,9 +122,9 @@ public class LoanDAO {
      }
      
      public int countActiveLoans(Connection conn, String memberID) throws SQLException {
-         String sql = """
-                      SELECT COUNT(*) AS total FROM loans
-                      WHERE member_id = ? AND status = 'ACTIVE'""";
+            String sql = """
+                SELECT COUNT(*) AS total FROM loans
+                WHERE member_id = ? AND status = 'ACTIVE'""";
          
          try (PreparedStatement stmt = conn.prepareStatement(sql)) {
              stmt.setString(1, memberID);
@@ -135,7 +136,7 @@ public class LoanDAO {
          }
      }
      
-     public int CountActiveBookLoans(Connection conn, String bookID) throws SQLException {
+    public int countActiveBookLoans(Connection conn, String bookID) throws SQLException {
          String sql = """
                 SELECT COUNT(*) AS total FROM loans
                 WHERE book_id = ? AND status = 'ACTIVE'""";
@@ -151,6 +152,64 @@ public class LoanDAO {
         }
      }
      
+    public int countBookLoanHistory(Connection conn, String bookID) throws SQLException {
+         String sql = """
+                      SELECT COUNT(*) AS total
+                      FROM loans WHERE book_id = ?""";
+         
+         try(PreparedStatement stmt = conn.prepareStatement(sql)) {
+             stmt.setString(1, bookID);
+             try(ResultSet rs = stmt.executeQuery()) {
+                 rs.next();
+                 return rs.getInt("total");
+             }
+         }
+     }
+     
+    public boolean hasActiveLoan(
+        Connection conn,
+        String memberID,
+        String bookID)
+        throws SQLException {
+
+        String sql = """
+            SELECT COUNT(*) AS total FROM loans
+            WHERE member_id = ? AND book_id = ? AND status = 'ACTIVE'""";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, memberID);
+            stmt.setString(2, bookID);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                rs.next();
+                return rs.getInt("total") > 0;
+            }
+        }
+    }
+     
+    public LocalDate findActiveBorrowDate(Connection conn, long loanID) throws SQLException {
+
+        String sql = """
+                SELECT borrow_date FROM loans
+                WHERE loan_id = ? AND status = 'ACTIVE' FOR UPDATE""";
+
+        try (PreparedStatement stmt =conn.prepareStatement(sql)) {
+
+            stmt.setLong(1, loanID);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getDate(
+                            "borrow_date"
+                    ).toLocalDate();
+                }
+            }
+        }
+
+        return null;
+    }
+    
      private Loan mapRow(ResultSet rs) throws SQLException {
          long loanID = rs.getLong("loan_id");
          String bookID = rs.getString("book_id");
