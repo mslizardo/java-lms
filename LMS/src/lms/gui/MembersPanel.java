@@ -3,133 +3,296 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
 package lms.gui;
-import lms.model.Member;
-import lms.model.MemberStatus;
-import lms.model.MemberType;
+
 import lms.service.LibraryService;
-import javax.swing.BorderFactory;
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.util.ArrayList;
+import lms.model.*;
+import lms.exception.LibraryException;
+
+import java.awt.*;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.sql.SQLException;
+import java.util.regex.Pattern;
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
+
 /**
  *
- * @author Adriel Justine Danga
+ * @author
  */
 public class MembersPanel extends JPanel {
+
     private final LibraryService service;
-    private final Runnable afterChange;
-    private final JTextField search = new JTextField(22);
-    private final JTextField id = new JTextField();
-    private final JTextField name = new JTextField();
-    private final JTextField phone = new JTextField();
-    private final JTextField email = new JTextField();
-    private final JComboBox<MemberType> type = new JComboBox<>(MemberType.values());
-    private final JComboBox<MemberStatus> status = new JComboBox<>(MemberStatus.values());
-    private final DefaultTableModel model = Ui.tableModel("Member ID", "Name", "Type", "Contact", "Email", "Status", "Loan limit");
-    private final JTable table = new JTable(model);
-    private final List<Member> rows = new ArrayList<>();
-    private boolean editing;
+    private final JTable memberTable;
+    private final DefaultTableModel tableModel;
+    private final TableRowSorter<DefaultTableModel> sorter;
+    private final JTextField searchField;
+    private List<Member> members = new java.util.ArrayList<>();
 
-    public MembersPanel(LibraryService service, Runnable afterChange) {
-        this.service = service; this.afterChange = afterChange;
-        setLayout(new BorderLayout(18, 18)); setBackground(Ui.PALE);
-        setBorder(BorderFactory.createEmptyBorder(26, 30, 28, 30));
-        JPanel top = new JPanel(new BorderLayout(0, 15)); top.setOpaque(false);
-        JPanel heading = new JPanel(new BorderLayout()); heading.setOpaque(false);
-        heading.add(Ui.title("Member Records"), BorderLayout.NORTH);
-        heading.add(Ui.subtitle("Manage student and faculty accounts. Deactivate accounts to preserve loan history."), BorderLayout.SOUTH);
-        top.add(heading, BorderLayout.NORTH);
-        JPanel searchRow = new JPanel(new BorderLayout(10, 0)); searchRow.setOpaque(false);
-        searchRow.add(new JLabel("Search members"), BorderLayout.WEST);
-        search.setToolTipText("Search by member ID, name, email, or type"); searchRow.add(search, BorderLayout.CENTER);
-        var refresh = Ui.button("Refresh", false); refresh.addActionListener(e -> refresh()); searchRow.add(refresh, BorderLayout.EAST);
-        top.add(searchRow, BorderLayout.SOUTH); add(top, BorderLayout.NORTH);
+    public MembersPanel(LibraryService service) {
+        this.service = service;
+        setLayout(new BorderLayout(10, 10));
 
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION); Ui.styleTable(table);
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && table.getSelectedRow() >= 0) selectRow(table.getSelectedRow());
+        JLabel title = new JLabel("Member Management");
+        title.setFont(new Font("SansSerif", Font.BOLD, 22));
+
+        JButton register = new JButton("Register Member");
+        JButton edit = new JButton("Edit Member");
+        JButton status = new JButton("Change Status");
+        JButton refresh = new JButton("Refresh");
+        searchField = new JTextField(15);
+
+        JPanel buttons = new JPanel();
+        buttons.add(register);
+        buttons.add(edit);
+        buttons.add(status);
+        buttons.add(refresh);
+        buttons.add(new JLabel("Search:"));
+        buttons.add(searchField);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.add(title, BorderLayout.NORTH);
+        header.add(buttons, BorderLayout.CENTER);
+        add(header, BorderLayout.NORTH);
+
+        String[] columns = {
+            "Member ID", "Full Name", "Type", "Contact Number",
+            "Email", "Status", "Borrowing Limit"
+        };
+
+        tableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        memberTable = new JTable(tableModel);
+        memberTable.setRowHeight(28);
+        memberTable.setFillsViewportHeight(true);
+        memberTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        sorter = new TableRowSorter<>(tableModel);
+        memberTable.setRowSorter(sorter);
+        add(new JScrollPane(memberTable), BorderLayout.CENTER);
+
+        register.addActionListener(e -> showMemberForm(null));
+        edit.addActionListener(e -> {
+            Member selected = selectedMember();
+            if (selected != null) {
+                showMemberForm(selected);
+            }
         });
-        JPanel form = formPanel(); form.setPreferredSize(new Dimension(285, 450)); add(form, BorderLayout.WEST);
-        add(Ui.scroll(table), BorderLayout.CENTER);
-        search.getDocument().addDocumentListener(new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { refresh(); }
-            public void removeUpdate(DocumentEvent e) { refresh(); }
-            public void changedUpdate(DocumentEvent e) { refresh(); }
+        status.addActionListener(e -> changeStatus());
+        refresh.addActionListener(e -> {
+            searchField.setText("");
+            loadMembers();
         });
-    }
 
-    private JPanel formPanel() {
-        JPanel panel = new JPanel(new GridBagLayout()); panel.setBackground(java.awt.Color.WHITE);
-        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Ui.LINE), BorderFactory.createEmptyBorder(15, 15, 15, 15)));
-        GridBagConstraints c = new GridBagConstraints(); c.gridx=0; c.weightx=1; c.fill=GridBagConstraints.HORIZONTAL; c.insets=new Insets(4,0,4,0);
-        int y=0; y=field(panel,c,y,"Member ID",id); y=field(panel,c,y,"Full name",name);
-        y=field(panel,c,y,"Member type",type); y=field(panel,c,y,"Contact number",phone); y=field(panel,c,y,"Email address",email);
-        y=field(panel,c,y,"Account status",status);
-        var save=Ui.button("Save member",true); save.addActionListener(e -> saveMember()); c.gridy=y++; c.insets=new Insets(12,0,5,0); panel.add(save,c);
-        var deactivate=Ui.button("Deactivate selected",false); deactivate.addActionListener(e -> deactivate()); c.gridy=y++; c.insets=new Insets(4,0,5,0); panel.add(deactivate,c);
-        var clear=Ui.button("Clear form",false); clear.addActionListener(e -> clearForm()); c.gridy=y; panel.add(clear,c);
-        return panel;
-    }
+        searchField.getDocument().addDocumentListener(
+                new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                searchMembers();
+            }
 
-    private int field(JPanel panel, GridBagConstraints c, int y, String label, java.awt.Component control) {
-        JLabel caption=new JLabel(label); caption.setForeground(Ui.MUTED); caption.setFont(new java.awt.Font("SansSerif",java.awt.Font.BOLD,11));
-        c.gridy=y++; panel.add(caption,c); c.gridy=y++; panel.add(control,c); return y;
-    }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                searchMembers();
+            }
 
-    public void refresh() {
-        String keyword=search.getText();
-        Ui.async(this, () -> service.getMembers(keyword), data -> {
-            rows.clear(); rows.addAll(data); model.setRowCount(0);
-            for(Member m:rows) model.addRow(new Object[]{m.getMemberID(),m.getFullName(),m.getMemberType(),m.getContactNumber(),m.getEmail(),m.getStatus(),m.getBorrowingLimit()});
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                searchMembers();
+            }
         });
+
+        loadMembers();
     }
 
-    private void selectRow(int index) {
-        if(index>=rows.size()) return; Member m=rows.get(index); editing=true;
-        id.setText(m.getMemberID()); id.setEnabled(false); name.setText(m.getFullName()); phone.setText(m.getContactNumber()); email.setText(m.getEmail());
-        type.setSelectedItem(m.getMemberType()); status.setSelectedItem(m.getStatus());
+    public void loadMembers() {
+        new SwingWorker<List<Member>, Void>() {
+            @Override
+            protected List<Member> doInBackground() throws Exception {
+                return service.getAllMembers();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    members = get();
+                    tableModel.setRowCount(0);
+
+                    for (Member m : members) {
+                        tableModel.addRow(new Object[]{
+                            m.getMemberID(), m.getFullName(),
+                            m.getMemberType(), m.getContactNumber(),
+                            m.getEmail(), m.getStatus(),
+                            m.getBorrowingLimit()
+                        });
+                    }
+                } catch (Exception e) {
+                    showError(e);
+                }
+            }
+        }.execute();
     }
 
-    private void saveMember() {
+    private void searchMembers() {
+        String keyword = searchField.getText().trim();
+        sorter.setRowFilter(keyword.isEmpty() ? null
+                : RowFilter.regexFilter("(?i)" + Pattern.quote(keyword), 0, 1, 2, 3, 4, 5));
+    }
+
+    private Member selectedMember() {
+        int row = memberTable.getSelectedRow();
+
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Select a member first.");
+            return null;
+        }
+
+        int modelRow = memberTable.convertRowIndexToModel(row);
+        String memberID = tableModel.getValueAt(modelRow, 0).toString();
+
+        return members.stream()
+                .filter(m -> m.getMemberID().equals(memberID))
+                .findFirst().orElse(null);
+    }
+
+    private void showMemberForm(Member existing) {
+        boolean creating = existing == null;
+
+        JTextField id = new JTextField(creating ? "" : existing.getMemberID());
+        JTextField name = new JTextField(creating ? "" : existing.getFullName());
+        JTextField phone = new JTextField(creating ? "" : existing.getContactNumber());
+        JTextField email = new JTextField(creating ? "" : existing.getEmail());
+
+        JComboBox<MemberType> type = new JComboBox<>(MemberType.values());
+        JComboBox<MemberStatus> status = new JComboBox<>(MemberStatus.values());
+
+        if (!creating) {
+            type.setSelectedItem(existing.getMemberType());
+            status.setSelectedItem(existing.getStatus());
+        }
+
+        id.setEditable(creating);
+        type.setEnabled(creating);
+
+        JPanel form = new JPanel(new GridLayout(6, 2, 8, 8));
+        form.add(new JLabel("Member ID:"));
+        form.add(id);
+        form.add(new JLabel("Full Name:"));
+        form.add(name);
+        form.add(new JLabel("Contact Number:"));
+        form.add(phone);
+        form.add(new JLabel("Email:"));
+        form.add(email);
+        form.add(new JLabel("Member Type:"));
+        form.add(type);
+        form.add(new JLabel("Status:"));
+        form.add(status);
+
+        int result = JOptionPane.showConfirmDialog(this, form,
+                creating ? "Register Member" : "Edit Member",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
         try {
-            boolean creating=!editing;
-            String memberID=id.getText().trim(), fullName=name.getText().trim(), contact=phone.getText().trim(), mail=email.getText().trim();
-            MemberType memberType=(MemberType)type.getSelectedItem(); MemberStatus memberStatus=(MemberStatus)status.getSelectedItem();
-            Ui.async(this, () -> { service.saveMember(memberID,fullName,memberType,contact,mail,memberStatus,creating); return true; }, done -> {
-                JOptionPane.showMessageDialog(this,creating?"Member added successfully.":"Member updated successfully.","Saved",JOptionPane.INFORMATION_MESSAGE);
-                clearForm(); refresh(); afterChange.run();
-            });
-        } catch(Exception ex) { Ui.error(this,ex); }
+            String memberID = id.getText().trim();
+            String fullName = name.getText().trim();
+            String contact = phone.getText().trim();
+            String mail = email.getText().trim();
+
+            MemberType memberType = (MemberType) type.getSelectedItem();
+            MemberStatus memberStatus = (MemberStatus) status.getSelectedItem();
+
+            Member member = switch (memberType) {
+                case STUDENT ->
+                    new StudentMember(
+                    memberID, fullName, contact, mail, memberStatus);
+                case FACULTY ->
+                    new FacultyMember(
+                    memberID, fullName, contact, mail, memberStatus);
+            };
+
+            runMemberOperation(() -> creating
+                    ? service.registerMember(member)
+                    : service.updateMember(member),
+                    creating ? "Member registered!" : "Member updated!");
+
+        } catch (IllegalArgumentException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(),
+                    "Invalid Input", JOptionPane.WARNING_MESSAGE);
+        }
     }
 
-    private void deactivate() {
-        if(!editing) { JOptionPane.showMessageDialog(this,"Select a member from the table first."); return; }
-        String memberID=id.getText();
-        int choice=JOptionPane.showConfirmDialog(this,"Deactivate " + name.getText() + "? Their history will be kept.","Confirm deactivation",JOptionPane.YES_NO_OPTION);
-        if(choice!=JOptionPane.YES_OPTION) return;
-        Ui.async(this, () -> { service.saveMember(memberID,name.getText(),(MemberType)type.getSelectedItem(),phone.getText(),email.getText(),MemberStatus.INACTIVE,false); return true; }, done -> {
-            JOptionPane.showMessageDialog(this,"Member deactivated.","Updated",JOptionPane.INFORMATION_MESSAGE); clearForm(); refresh(); afterChange.run();
-        });
+    private void changeStatus() {
+        Member selected = selectedMember();
+        if (selected == null) {
+            return;
+        }
+
+        JComboBox<MemberStatus> options = new JComboBox<>(MemberStatus.values());
+        options.setSelectedItem(selected.getStatus());
+
+        int result = JOptionPane.showConfirmDialog(this, options,
+                "Change Member Status", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        MemberStatus newStatus = (MemberStatus) options.getSelectedItem();
+
+        runMemberOperation(
+                () -> service.changeMemberStatus(selected.getMemberID(), newStatus),
+                "Member status updated!"
+        );
     }
 
-    private void clearForm() {
-        editing=false; id.setEnabled(true); id.setText(""); name.setText(""); phone.setText(""); email.setText("");
-        type.setSelectedItem(MemberType.STUDENT); status.setSelectedItem(MemberStatus.ACTIVE); table.clearSelection();
+    @FunctionalInterface
+    private interface MemberOperation {
+        boolean execute() throws SQLException, LibraryException;
+    }
+
+    private void runMemberOperation(MemberOperation operation, String message) {
+        new SwingWorker<Boolean, Void>() {
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                return operation.execute();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    if (get()) {
+                        JOptionPane.showMessageDialog(MembersPanel.this, message);
+                        loadMembers();
+                    } else {
+                        JOptionPane.showMessageDialog(MembersPanel.this,
+                                "Operation was not completed.");
+                    }
+                } catch (Exception e) {
+                    showError(e);
+                }
+            }
+        }.execute();
+    }
+
+    private void showError(Exception e) {
+        Throwable cause = e;
+        if (e instanceof ExecutionException && e.getCause() != null) {
+            cause = e.getCause();
+        }
+
+        String message = cause instanceof LibraryException
+                || cause instanceof IllegalArgumentException
+                        ? cause.getMessage()
+                        : "Unable to complete the operation. Check the database connection or constraints.";
+
+        JOptionPane.showMessageDialog(this, message,
+                "Member Management Error", JOptionPane.ERROR_MESSAGE);
     }
 }
-

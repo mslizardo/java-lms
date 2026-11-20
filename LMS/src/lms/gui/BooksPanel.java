@@ -4,188 +4,443 @@
  */
 package lms.gui;
 
-import lms.model.Book;
-import lms.model.BookInventory;
-import lms.service.LibraryService;
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
+import java.awt.BorderLayout;
+import java.awt.Font;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
-import javax.swing.JOptionPane;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
+import javax.swing.SwingConstants;
 import javax.swing.table.DefaultTableModel;
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import lms.service.LibraryService;
+import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.List;
+import javax.swing.JOptionPane;
+import javax.swing.SwingWorker;
+import lms.model.Book;
+import lms.exception.LibraryException;
+import java.awt.GridLayout;
+import javax.swing.JButton;
+import javax.swing.JTextField;
+import javax.swing.JOptionPane;
+import javax.swing.RowFilter;
+import javax.swing.table.TableRowSorter;
+import java.util.regex.Pattern;
+
 /**
  *
- * @author Adriel Justine Danga
+ * @author Mary
  */
-public class BooksPanel extends JPanel {
+public class BooksPanel extends JPanel { 
+    private final JTable bookTable;
+    private final DefaultTableModel tableModel;
     private final LibraryService service;
-    private final Runnable afterChange;
-    private final JTextField search = new JTextField(22);
-    private final JTextField id = new JTextField();
-    private final JTextField isbn = new JTextField();
-    private final JTextField title = new JTextField();
-    private final JTextField author = new JTextField();
-    private final JTextField category = new JTextField();
-    private final JTextField publisher = new JTextField();
-    private final JTextField year = new JTextField();
-    private final JTextField copies = new JTextField();
-    private final DefaultTableModel model = Ui.tableModel("Book ID", "ISBN", "Title", "Author", "Category", "Total", "On loan", "Available");
-    private final JTable table = new JTable(model);
-    private final List<BookInventory> rows = new ArrayList<>();
-    private boolean editing;
-
-    public BooksPanel(LibraryService service, Runnable afterChange) {
+    private final JTextField searchField;
+    private final TableRowSorter<DefaultTableModel> sorter;
+    
+    public BooksPanel(LibraryService service) {
         this.service = service;
-        this.afterChange = afterChange;
-        setLayout(new BorderLayout(18, 18));
-        setBackground(Ui.PALE);
-        setBorder(BorderFactory.createEmptyBorder(26, 30, 28, 30));
+        
+        setLayout(new BorderLayout(10, 10));
+        JLabel title = new JLabel("Book Catalog Management");
+        title.setFont(new Font("SansSerif", Font.BOLD, 22));
+        
+        JButton registerButton = new JButton("Register Book");
+        registerButton.addActionListener(e -> showRegistrationForm());
+        
+        JButton editButton = new JButton("Edit Book");
+        editButton.addActionListener(e -> showEditForm());
 
-        JPanel top = new JPanel(new BorderLayout(0, 15));
-        top.setOpaque(false);
-        JPanel heading = new JPanel(new BorderLayout());
-        heading.setOpaque(false);
-        heading.add(Ui.title("Book Records"), BorderLayout.NORTH);
-        heading.add(Ui.subtitle("Add, update, search, and track available copies."), BorderLayout.SOUTH);
-        top.add(heading, BorderLayout.NORTH);
-        JPanel searchRow = new JPanel(new BorderLayout(10, 0));
-        searchRow.setOpaque(false);
-        searchRow.add(new JLabel("Search books"), BorderLayout.WEST);
-        search.setToolTipText("Search by ID, ISBN, title, author, or category");
-        searchRow.add(search, BorderLayout.CENTER);
-        JButton refresh = Ui.button("Refresh", false);
-        refresh.addActionListener(e -> refresh());
-        searchRow.add(refresh, BorderLayout.EAST);
-        top.add(searchRow, BorderLayout.SOUTH);
-        add(top, BorderLayout.NORTH);
+        JButton deleteButton = new JButton("Delete Book");
+        deleteButton.addActionListener(e -> deleteSelectedBook());
+        
+        JButton refreshButton = new JButton("Refresh");
+        
+        
+        JPanel buttons = new JPanel();
+        buttons.add(registerButton);
+        buttons.add(editButton);
+        buttons.add(deleteButton);
+        buttons.add(refreshButton);
 
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        Ui.styleTable(table);
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && table.getSelectedRow() >= 0) selectRow(table.getSelectedRow());
-        });
-        JScrollPane tableScroll = Ui.scroll(table);
+        JPanel header = new JPanel(new BorderLayout());
+        header.add(title, BorderLayout.WEST);
+        header.add(buttons, BorderLayout.EAST);
+        
+        searchField = new JTextField(18);
+        JButton searchButton = new JButton("Search");
+        searchButton.addActionListener(e -> searchBooks());
 
-        JPanel form = formPanel();
-        form.setPreferredSize(new Dimension(285, 500));
-        add(form, BorderLayout.WEST);
-        add(tableScroll, BorderLayout.CENTER);
+        searchField.addActionListener(e -> searchBooks());
 
-        search.getDocument().addDocumentListener(new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { refresh(); }
-            public void removeUpdate(DocumentEvent e) { refresh(); }
-            public void changedUpdate(DocumentEvent e) { refresh(); }
-        });
-    }
-
-    private JPanel formPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(java.awt.Color.WHITE);
-        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Ui.LINE),
-                BorderFactory.createEmptyBorder(15, 15, 15, 15)));
-        GridBagConstraints c = new GridBagConstraints();
-        c.gridx = 0; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL;
-        c.insets = new Insets(3, 0, 3, 0);
-        int y = 0;
-        y = field(panel, c, y, "Book ID", id);
-        y = field(panel, c, y, "ISBN (optional)", isbn);
-        y = field(panel, c, y, "Title", title);
-        y = field(panel, c, y, "Author", author);
-        y = field(panel, c, y, "Category", category);
-        y = field(panel, c, y, "Publisher", publisher);
-        y = field(panel, c, y, "Publication year", year);
-        y = field(panel, c, y, "Total copies", copies);
-
-        JButton save = Ui.button("Save book", true);
-        save.addActionListener(e -> saveBook());
-        c.gridy = y++; c.insets = new Insets(12, 0, 5, 0);
-        panel.add(save, c);
-        JButton delete = Ui.button("Delete selected", false);
-        delete.addActionListener(e -> deleteBook());
-        c.gridy = y++; c.insets = new Insets(4, 0, 5, 0);
-        panel.add(delete, c);
-        JButton clear = Ui.button("Clear form", false);
-        clear.addActionListener(e -> clearForm());
-        c.gridy = y; panel.add(clear, c);
-        return panel;
-    }
-
-    private int field(JPanel panel, GridBagConstraints c, int y, String label, JTextField input) {
-        JLabel caption = new JLabel(label);
-        caption.setForeground(Ui.MUTED);
-        caption.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 11));
-        c.gridy = y++; panel.add(caption, c);
-        c.gridy = y++; panel.add(input, c);
-        return y;
-    }
-
-    public void refresh() {
-        String keyword = search.getText();
-        Ui.async(this, () -> service.getBooks(keyword), data -> {
-            rows.clear(); rows.addAll(data); model.setRowCount(0);
-            for (BookInventory item : rows) {
-                Book b = item.book();
-                model.addRow(new Object[]{b.getBookID(), b.getIsbn() == null ? "—" : b.getIsbn(), b.getTitle(),
-                        b.getAuthor(), b.getCategory(), b.getTotalCopies(), item.borrowedCopies(), item.availableCopies()});
+        buttons.add(new JLabel("Search:"));
+        buttons.add(searchField);
+        buttons.add(searchButton);
+        
+        add(header, BorderLayout.NORTH);
+        
+        String[] columns = {"Book ID", "ISBN", "Title", "Author", "Category", "Total", "Borrowed", "Available"};
+        
+        tableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column){
+            return false;
             }
+        };
+        bookTable = new JTable(tableModel);
+        sorter = new TableRowSorter<>(tableModel);
+        bookTable.setRowSorter(sorter);
+        refreshButton.addActionListener(e -> {
+            searchField.setText("");
+            sorter.setRowFilter(null);
+            loadBooks();
         });
-    }
+        
+        bookTable.setRowHeight(28);
+        bookTable.setFillsViewportHeight(true);
+        
+        JScrollPane scrollPane = new JScrollPane(bookTable);
+        add(scrollPane, BorderLayout.CENTER);
+        
+        loadBooks();
+        }
+                
+    private void loadBooks() {
+        SwingWorker<ArrayList<Object[]>, Void> worker = new SwingWorker<>() {
 
-    private void selectRow(int index) {
-        if (index >= rows.size()) return;
-        Book book = rows.get(index).book();
-        editing = true;
-        id.setText(book.getBookID()); id.setEnabled(false);
-        isbn.setText(book.getIsbn() == null ? "" : book.getIsbn());
-        title.setText(book.getTitle()); author.setText(book.getAuthor()); category.setText(book.getCategory());
-        publisher.setText(book.getPublisher()); year.setText(String.valueOf(book.getPublicationYear()));
-        copies.setText(String.valueOf(book.getTotalCopies()));
-    }
+            @Override
+            protected ArrayList<Object[]> doInBackground()
+                throws Exception {
+                    return service.getBookInventory();
+                }
 
-    private void saveBook() {
+            @Override
+            protected void done() {
+                 try {
+                    ArrayList<Object[]> books = get();
+                    tableModel.setRowCount(0);
+
+                    for (Object[] book : books) {
+                            tableModel.addRow(book);
+                    }
+                 } catch (Exception e) {
+
+                    JOptionPane.showMessageDialog(BooksPanel.this, "Unable to load books: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+                  }
+             }
+        };
+        worker.execute();
+    }
+    
+    private void showRegistrationForm() {
+        JTextField bookID = new JTextField();
+        JTextField isbn = new JTextField();
+        JTextField title = new JTextField();
+        JTextField author = new JTextField();
+        JTextField category = new JTextField();
+        JTextField publisher = new JTextField();
+        JTextField year = new JTextField();
+        JTextField copies = new JTextField();
+        
+        JPanel form = new JPanel(new GridLayout(8, 2, 8, 8));
+        
+        form.add(new JLabel("Book ID:"));
+        form.add(bookID);
+
+        form.add(new JLabel("ISBN (Optional):"));
+        form.add(isbn);
+
+        form.add(new JLabel("Title:"));
+        form.add(title);
+
+        form.add(new JLabel("Author:"));
+        form.add(author);
+
+        form.add(new JLabel("Category:"));
+        form.add(category);
+
+        form.add(new JLabel("Publisher:"));
+        form.add(publisher);
+
+        form.add(new JLabel("Publication Year:"));
+        form.add(year);
+
+        form.add(new JLabel("Total Copies:"));
+        form.add(copies);
+        
+        int result = JOptionPane.showConfirmDialog(this, form, "Register New Book", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        
         try {
-            String bookID = id.getText().trim();
-            if (bookID.isEmpty()) throw new IllegalArgumentException("Book ID cannot be empty.");
-            Book book = new Book(bookID, isbn.getText(), title.getText(), author.getText(), category.getText(),
-                    publisher.getText(), Integer.parseInt(year.getText().trim()), Integer.parseInt(copies.getText().trim()));
-            boolean creating = !editing;
-            Ui.async(this, () -> { service.saveBook(book, creating); return true; }, done -> {
-                JOptionPane.showMessageDialog(this, creating ? "Book added successfully." : "Book updated successfully.",
-                        "Saved", JOptionPane.INFORMATION_MESSAGE);
-                clearForm(); refresh(); afterChange.run();
-            });
-        } catch (NumberFormatException ex) {
-            Ui.error(this, new IllegalArgumentException("Publication year and total copies must be whole numbers."));
-        } catch (Exception ex) { Ui.error(this, ex); }
-    }
+            String isbnValue = isbn.getText().trim();
+            if (isbnValue.isEmpty()) {
+                isbnValue = null;
+            }
 
-    private void deleteBook() {
-        if (!editing) { JOptionPane.showMessageDialog(this, "Select a book from the table first."); return; }
-        int choice = JOptionPane.showConfirmDialog(this, "Delete book “" + id.getText() + "”?", "Confirm deletion", JOptionPane.YES_NO_OPTION);
-        if (choice != JOptionPane.YES_OPTION) return;
-        String bookID = id.getText();
-        Ui.async(this, () -> { service.deleteBook(bookID); return true; }, done -> {
-            JOptionPane.showMessageDialog(this, "Book deleted.", "Deleted", JOptionPane.INFORMATION_MESSAGE);
-            clearForm(); refresh(); afterChange.run();
-        });
-    }
+            Book book = new Book(
+                    bookID.getText().trim(), isbnValue, title.getText().trim(),
+                    author.getText().trim(),category.getText().trim(),
+                    publisher.getText().trim(),
+                    Integer.parseInt(year.getText().trim()), Integer.parseInt(copies.getText().trim()));
 
-    private void clearForm() {
-        editing = false; id.setEnabled(true);
-        id.setText(""); isbn.setText(""); title.setText(""); author.setText(""); category.setText("");
-        publisher.setText(""); year.setText(""); copies.setText(""); table.clearSelection();
+            registerBookAsync(book);
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Publication year and total copies must be valid numbers.",
+                    "Invalid Input",
+                    JOptionPane.WARNING_MESSAGE
+            );
+        } catch (IllegalArgumentException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Invalid Book Information", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+    
+    private void registerBookAsync(Book book) {
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                return service.registerBook(book);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    boolean inserted = get();
+
+                    if(inserted) {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book registered successfully!");
+                        loadBooks();
+                    } else {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book registration was not completed.", "Registration Failed", JOptionPane.WARNING_MESSAGE);
+                    }
+
+                } catch(Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    JOptionPane.showMessageDialog(
+                            BooksPanel.this,
+                            cause instanceof LibraryException || cause instanceof IllegalArgumentException ? cause.getMessage()
+                                : "Unable to register book. Check the database constraints or connection.", "Registration Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+    
+    private String getSelectedBookID() {
+        int selectedRow = bookTable.getSelectedRow();
+        
+        if (selectedRow == -1) {JOptionPane.showMessageDialog(this, "Please select a book first.", "No Book Selected", JOptionPane.WARNING_MESSAGE);
+
+            return null;
+        }
+        
+        int modelRow = bookTable.convertRowIndexToModel(selectedRow);
+        return tableModel.getValueAt(modelRow, 0).toString();
+    }
+    
+    private void showEditForm() {
+        String selectedID = getSelectedBookID();
+
+        if (selectedID == null) {
+            return;
+        }
+
+        SwingWorker<Book, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Book doInBackground() throws Exception {
+                return service.getBookByID(selectedID);
+            }
+            @Override
+            protected void done() {
+                try {
+                    Book existing = get();
+
+                    JTextField isbn = new JTextField(existing.getIsbn() == null ? "" : existing.getIsbn());                    
+                    JTextField title = new JTextField(existing.getTitle());                       
+                    JTextField author = new JTextField(existing.getAuthor());
+                    JTextField category = new JTextField(existing.getCategory());
+                    JTextField publisher = new JTextField(existing.getPublisher());
+                    JTextField year = new JTextField(String.valueOf(existing.getPublicationYear()));
+                    JTextField copies = new JTextField(String.valueOf(existing.getTotalCopies()));
+
+                    JPanel form = new JPanel(new GridLayout(7, 2, 8, 8));
+
+                    form.add(new JLabel("ISBN (Optional):"));
+                    form.add(isbn);
+
+                    form.add(new JLabel("Title:"));
+                    form.add(title);
+
+                    form.add(new JLabel("Author:"));
+                    form.add(author);
+
+                    form.add(new JLabel("Category:"));
+                    form.add(category);
+
+                    form.add(new JLabel("Publisher:"));
+                    form.add(publisher);
+
+                    form.add(new JLabel("Publication Year:"));
+                    form.add(year);
+
+                    form.add(new JLabel("Total Copies:"));
+                    form.add(copies);
+
+                    int result = JOptionPane.showConfirmDialog(BooksPanel.this, form, "Edit Book: " + selectedID,
+                            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE );
+                            
+                    if (result != JOptionPane.OK_OPTION) {
+                        return;
+                    }
+
+                    try {
+                        String isbnValue = isbn.getText().trim();
+
+                        if (isbnValue.isEmpty()) {
+                            isbnValue = null;
+                        }
+
+                        Book updated = new Book(
+                                selectedID,
+                                isbnValue,
+                                title.getText().trim(),
+                                author.getText().trim(),
+                                category.getText().trim(),
+                                publisher.getText().trim(),
+                                Integer.parseInt(year.getText().trim()),
+                                Integer.parseInt(copies.getText().trim())
+                        );
+
+                        updateBookAsync(updated);
+
+                    } catch (NumberFormatException ex) {
+
+                        JOptionPane.showMessageDialog(BooksPanel.this,
+                                "Year and copies must be valid numbers.", "Invalid Input", JOptionPane.WARNING_MESSAGE);
+
+                    } catch (IllegalArgumentException ex) {
+
+                        JOptionPane.showMessageDialog(
+                                BooksPanel.this, ex.getMessage(), "Invalid Book", JOptionPane.WARNING_MESSAGE);
+                    }
+
+                } catch (Exception ex) {
+
+                    JOptionPane.showMessageDialog(
+                            BooksPanel.this,
+                            "Unable to load book: "
+                            + rootMessage(ex),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        };
+
+        worker.execute();
+    }
+    
+    private void updateBookAsync(Book book) {
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                return service.updateBook(book);
+            }
+            @Override
+            protected void done() {
+
+                try {
+                    boolean updated = get();
+
+                    if (updated) {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book updated successfully!");
+                        loadBooks();
+                    } else {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book update was not completed.");
+                    }
+
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                            BooksPanel.this,
+                            rootMessage(ex),
+                            "Update Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        };
+
+        worker.execute();
+    }
+    
+    private void deleteSelectedBook() {
+        String bookID = getSelectedBookID();
+        
+        if (bookID == null) {
+            return;
+        }
+        int confirmation = JOptionPane.showConfirmDialog(
+                this,
+                "Delete book " + bookID + "?\n"
+                + "Books with borrowing history cannot be deleted.",
+                "Confirm Deletion",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+
+        if (confirmation != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                return service.deleteBook(bookID);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    boolean deleted = get();
+                    if (deleted) {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book deleted successfully!");
+                        loadBooks();
+                    } else {
+                        JOptionPane.showMessageDialog(BooksPanel.this, "Book was not deleted.");
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                            BooksPanel.this,
+                            rootMessage(ex),
+                            "Deletion Rejected",
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                }
+            }
+        };
+        worker.execute();
+    }
+    
+    private void searchBooks() {
+        String keyword = searchField.getText().trim();
+        if (keyword.isEmpty()) {
+            sorter.setRowFilter(null);
+            return;
+        }
+        String safeKeyword = Pattern.quote(keyword);
+        sorter.setRowFilter(RowFilter.regexFilter("(?i)" + safeKeyword, 0, 1, 2, 3, 4));
+    }
+    
+    private String rootMessage(Exception exception) {
+        Throwable cause = exception;
+
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() == null ? "An unexpected error occurred." : cause.getMessage();
     }
 }
