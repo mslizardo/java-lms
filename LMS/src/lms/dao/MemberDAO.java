@@ -56,6 +56,21 @@ public class MemberDAO {
         return Optional.empty();
     }
     
+    public Optional<Member> findByID(Connection conn, String memberID) throws SQLException {
+        String sql = "SELECT * FROM members WHERE member_id = ? FOR UPDATE";
+        
+        try(PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, memberID);
+            
+            try(ResultSet rs = stmt.executeQuery()) {
+                if(rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+    
     public ArrayList<Member> findAll() throws SQLException {
         ArrayList<Member> members = new ArrayList<>();
         
