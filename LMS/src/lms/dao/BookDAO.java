@@ -39,7 +39,7 @@ public class BookDAO {
         }
     }
     
-    public Optional<Book> findById(String bookID) throws SQLException {
+    public Optional<Book> findByID(String bookID) throws SQLException {
         String sql = "SELECT * FROM books WHERE book_id = ?";
         
         try(Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -120,7 +120,7 @@ public class BookDAO {
         return books;
     }
             
-     private Book mapRow(ResultSet rs)throws SQLException {
+    private Book mapRow(ResultSet rs)throws SQLException {
 
         return new Book(
                 rs.getString("book_id"),

@@ -41,7 +41,7 @@ public class MemberDAO {
         }
     }
     
-    public Optional<Member> findById(String memberID) throws SQLException {
+    public Optional<Member> findByID(String memberID) throws SQLException {
         String sql = "SELECT * FROM members WHERE member_id = ?";
         
         try(Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -59,7 +59,7 @@ public class MemberDAO {
     public ArrayList<Member> findAll() throws SQLException {
         ArrayList<Member> members = new ArrayList<>();
         
-        String sql = "SELECT * FROM member ORDER BY full_name";
+        String sql = "SELECT * FROM members ORDER BY full_name";
         
         try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql); ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
