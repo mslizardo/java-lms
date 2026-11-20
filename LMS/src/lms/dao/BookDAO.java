@@ -164,6 +164,41 @@ public class BookDAO {
         }
         return books;
     }
+    
+    public ArrayList<Object[]> findBookInventory() throws SQLException {
+        ArrayList<Object[]> records = new ArrayList<>();
+        String sql = """
+            SELECT b.book_id, b.isbn, b.title,
+                   b.author, b.category, b.total_copies,
+                   COUNT(l.loan_id) AS borrowed_copies
+            FROM books b
+            LEFT JOIN loans l
+                ON b.book_id = l.book_id
+               AND l.status = 'ACTIVE'
+            GROUP BY b.book_id, b.isbn, b.title,
+                     b.author, b.category, b.total_copies
+            ORDER BY b.title
+            """;
+        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql); ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+
+                int total = rs.getInt("total_copies");
+                int borrowed = rs.getInt("borrowed_copies");
+
+                records.add(new Object[]{
+                    rs.getString("book_id"),
+                    rs.getString("isbn"),
+                    rs.getString("title"),
+                    rs.getString("author"),
+                    rs.getString("category"),
+                    total,
+                    borrowed,
+                    total - borrowed
+                });
+            }
+        }
+        return records;
+    }
             
     private Book mapRow(ResultSet rs)throws SQLException {
 

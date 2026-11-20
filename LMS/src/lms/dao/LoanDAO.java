@@ -15,7 +15,7 @@ import java.util.Optional;
 
 /**
  *
- * @author Mary
+ * @author
  */
 public class LoanDAO {
     private final BookDAO bookDAO = new BookDAO();
@@ -235,4 +235,20 @@ public class LoanDAO {
          }
          return loan;
      }
+     
+     
+    public int countOverdueLoans() throws SQLException {
+        String sql = """
+            SELECT COUNT(*) AS total FROM loans
+            WHERE status = 'ACTIVE'
+              AND due_date < CURRENT_DATE()
+            """;
+
+        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql); ResultSet rs = stmt.executeQuery()) {
+
+            rs.next();
+            return rs.getInt("total");
+        }
+    }
+
 }

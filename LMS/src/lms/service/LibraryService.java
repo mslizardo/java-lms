@@ -14,15 +14,17 @@ import lms.model.Member;
 import lms.model.Loan;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import lms.model.LoanStatus;
+import lms.model.MemberStatus;
 
 /**
  *
- * @author Mary
+ * @author
  */
 public class LibraryService {
+
     private final BookDAO bookDAO;
     private final MemberDAO memberDAO;
     private final LoanDAO loanDAO;
@@ -32,42 +34,42 @@ public class LibraryService {
         this.memberDAO = new MemberDAO();
         this.loanDAO = new LoanDAO();
     }
-    
+
     public Loan borrowBook(String memberID, String bookID, LocalDate borrowDate, LocalDate dueDate) throws SQLException, LibraryException {
-        if(borrowDate == null || dueDate == null) {
+        if (borrowDate == null || dueDate == null) {
             throw new LibraryException("Borrow and due dates are required.");
         }
-        if(dueDate.isBefore(LocalDate.now())) {
+        if (dueDate.isBefore(LocalDate.now())) {
             throw new LibraryException("Due date cannot be before borrowing date.");
         }
-        if(borrowDate.isAfter(LocalDate.now())) {
+        if (borrowDate.isAfter(LocalDate.now())) {
             throw new LibraryException("Borrowed date cannot be in the future.");
         }
-        
-        try(Connection conn = DatabaseConnection.getConnection()) {
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
             conn.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             conn.setAutoCommit(false);
-            
+
             try {
                 Member member = memberDAO.findByID(conn, memberID).orElseThrow(() -> new LibraryException("Member not found."));
-                if(!member.isActive()) {
+                if (!member.isActive()) {
                     throw new LibraryException("Member account is inactive.");
                 }
-                
+
                 Book book = bookDAO.findByID(conn, bookID).orElseThrow(() -> new LibraryException("Member not found."));
-                
+
                 int activeLoans = loanDAO.countActiveLoans(conn, memberID);
-                
-                if(activeLoans >= member.getBorrowingLimit()) {
+
+                if (activeLoans >= member.getBorrowingLimit()) {
                     throw new LibraryException("Member has reached the borrowing limit.");
                 }
-                
+
                 int borrowedCopies = loanDAO.countActiveBookLoans(conn, bookID);
                 int availableCopies = book.getTotalCopies() - borrowedCopies;
-                if(availableCopies <= 0) {
+                if (availableCopies <= 0) {
                     throw new LibraryException("No available copies of this book");
                 }
-                
+
                 if (loanDAO.hasActiveLoan(conn, memberID, bookID)) {
                     throw new LibraryException(
                             "Member already has an active loan "
@@ -77,134 +79,223 @@ public class LibraryService {
 
                 long loanID = loanDAO.insert(conn, book, member, borrowDate, dueDate);
                 conn.commit();
-                
+
                 return new Loan(loanID, book, member, borrowDate, dueDate);
-            } catch(SQLException | LibraryException | RuntimeException e) {
+            } catch (SQLException | LibraryException | RuntimeException e) {
                 try {
                     conn.rollback();
                 } catch (SQLException rollbackError) {
                     e.addSuppressed(rollbackError);
-                } throw e;
+                }
+                throw e;
             }
         }
     }
-    
+
     public boolean returnBook(long loanID, LocalDate returnDate) throws SQLException, LibraryException {
-        if(loanID <= 0) {
+        if (loanID <= 0) {
             throw new LibraryException("Invalid loan ID.");
         }
-        if(returnDate == null) {
+        if (returnDate == null) {
             throw new LibraryException("Return date is required.");
         }
-        if(returnDate.isAfter(LocalDate.now())) {
+        if (returnDate.isAfter(LocalDate.now())) {
             throw new LibraryException("Return date cannot be in the future.");
         }
-        
-        try(Connection conn = DatabaseConnection.getConnection()) {
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                
+
                 LocalDate borrowDate = loanDAO.findActiveBorrowDate(conn, loanID);
 
                 if (borrowDate == null) {
                     throw new LibraryException("Loan not found or already returned.");
                 }
 
-                if(returnDate.isBefore(borrowDate)) {
+                if (returnDate.isBefore(borrowDate)) {
                     throw new LibraryException("Return date cannot be before borrow date.");
                 }
 
                 boolean returned = loanDAO.markReturned(conn, loanID, returnDate);
 
-                if(!returned) {
+                if (!returned) {
                     throw new LibraryException("Unable to complete the return.");
                 }
 
                 conn.commit();
 
                 return true;
-            } catch(SQLException | LibraryException | RuntimeException e) {
+            } catch (SQLException | LibraryException | RuntimeException e) {
                 try {
                     conn.rollback();
-                } catch(SQLException rollbackError) {
+                } catch (SQLException rollbackError) {
                     e.addSuppressed(rollbackError);
-                } throw e;
+                }
+                throw e;
             }
         }
     }
-    
+
     public boolean updateBook(Book book) throws SQLException, LibraryException {
-        if(book == null) {
+        if (book == null) {
             throw new LibraryException("Book information is required.");
         }
-        try(Connection conn = DatabaseConnection.getConnection()) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
             conn.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             conn.setAutoCommit(false);
-            
+
             try {
-                  Book existing = bookDAO.findByID(conn, book.getBookID()).orElseThrow(() 
+                Book existing = bookDAO.findByID(conn, book.getBookID()).orElseThrow(()
                         -> new LibraryException("Book record not found."));
-                  
-                  int activeLoans = loanDAO.countActiveBookLoans(conn, existing.getBookID());
-                    System.out.println("=== UPDATE BOOK DEBUG ===");
-                    System.out.println("Book ID: " + existing.getBookID());
-                    System.out.println("Current DB copies: " + existing.getTotalCopies());
-                    System.out.println("Requested copies: " + book.getTotalCopies());
-                    System.out.println("Active loans: " + activeLoans);
-                    
-                  if (book.getTotalCopies() < activeLoans) {
-                      throw new LibraryException(
-                              "Cannot reduce total copies below "
-                              + activeLoans + " active loans."
-                      );
-                  }
-                  boolean updated = bookDAO.update(conn, book);
-                  if(!updated) {
-                      throw new LibraryException("Book update failed.");
-                  }
-                  conn.commit();
-                  return true;
-                
+
+                int activeLoans = loanDAO.countActiveBookLoans(conn, existing.getBookID());
+                System.out.println("=== UPDATE BOOK DEBUG ===");
+                System.out.println("Book ID: " + existing.getBookID());
+                System.out.println("Current DB copies: " + existing.getTotalCopies());
+                System.out.println("Requested copies: " + book.getTotalCopies());
+                System.out.println("Active loans: " + activeLoans);
+
+                if (book.getTotalCopies() < activeLoans) {
+                    throw new LibraryException(
+                            "Cannot reduce total copies below "
+                            + activeLoans + " active loans."
+                    );
+                }
+                boolean updated = bookDAO.update(conn, book);
+                if (!updated) {
+                    throw new LibraryException("Book update failed.");
+                }
+                conn.commit();
+                return true;
+
             } catch (SQLException | LibraryException | RuntimeException e) {
                 try {
                     conn.rollback();
-                } catch(SQLException rollbackError) {
+                } catch (SQLException rollbackError) {
                     e.addSuppressed(rollbackError);
-                } throw e;
+                }
+                throw e;
             }
         }
     }
-    
+
     public boolean deleteBook(String bookID) throws SQLException, LibraryException {
-        if(bookID == null || bookID.isBlank()) {
+        if (bookID == null || bookID.isBlank()) {
             throw new LibraryException("Book ID is required.");
         }
-        try(Connection conn = DatabaseConnection.getConnection()) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
             conn.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             conn.setAutoCommit(false);
-            
+
             try {
-                  bookDAO.findByID(conn, bookID).orElseThrow(() 
-                          -> new LibraryException("Book record not found."));
-                  
-                  int loanHistory = loanDAO.countActiveBookLoans(conn, bookID);
-                  if(loanHistory > 0) {
-                      throw new LibraryException("Cannot delete this book because it has borrowing history.");
-                  }
-                  
-                  boolean deleted = bookDAO.delete(conn, bookID);
-                  if(!deleted) {
-                      throw new LibraryException("Book deletion failed.");
-                  }
-                  conn.commit();
-                  return true;
+                bookDAO.findByID(conn, bookID).orElseThrow(()
+                        -> new LibraryException("Book record not found."));
+
+                int loanHistory = loanDAO.countActiveBookLoans(conn, bookID);
+                if (loanHistory > 0) {
+                    throw new LibraryException("Cannot delete this book because it has borrowing history.");
+                }
+
+                boolean deleted = bookDAO.delete(conn, bookID);
+                if (!deleted) {
+                    throw new LibraryException("Book deletion failed.");
+                }
+                conn.commit();
+                return true;
             } catch (SQLException | LibraryException | RuntimeException e) {
                 try {
                     conn.rollback();
-                } catch(SQLException rollbackError) {
+                } catch (SQLException rollbackError) {
                     e.addSuppressed(rollbackError);
-                } throw e;
+                }
+                throw e;
             }
         }
     }
+
+    public ArrayList<Object[]> getBookInventory()
+            throws SQLException {
+
+        return bookDAO.findBookInventory();
+    }
+
+    public boolean registerBook(Book book) throws SQLException, LibraryException {
+        if (book == null) {
+            throw new LibraryException("Book information is required.");
+        }
+        if (bookDAO.findByID(book.getBookID()).isPresent()) {
+            throw new LibraryException("A book with this ID already exists.");
+        }
+        return bookDAO.insert(book);
+    }
+
+    public Book getBookByID(String bookID) throws SQLException, LibraryException {
+        if (bookID == null || bookID.isBlank()) {
+            throw new LibraryException("Book ID is required.");
+        }
+        return bookDAO.findByID(bookID).orElseThrow(() -> new LibraryException("Book not found."));
+    }
+
+    public ArrayList<Member> getAllMembers() throws SQLException {
+        return memberDAO.findAll();
+    }
+
+    public boolean registerMember(Member member) throws SQLException, LibraryException {
+        if (member == null) {
+            throw new LibraryException("Member information is required.");
+        }
+        if (memberDAO.findByID(member.getMemberID()).isPresent()) {
+            throw new LibraryException("Member ID already exists.");
+        }
+        return memberDAO.insert(member);
+    }
+
+    public boolean updateMember(Member member) throws SQLException, LibraryException {
+        if (member == null) {
+            throw new LibraryException("Member information is required.");
+        }
+        if (memberDAO.findByID(member.getMemberID()).isEmpty()) {
+            throw new LibraryException("Member not found.");
+        }
+        return memberDAO.update(member);
+    }
+
+    public boolean changeMemberStatus(String memberID, MemberStatus status)
+            throws SQLException, LibraryException {
+        if (status == null) {
+            throw new LibraryException("Member status is required.");
+        }
+        if (memberDAO.findByID(memberID).isEmpty()) {
+            throw new LibraryException("Member not found.");
+        }
+        return memberDAO.updateStatus(memberID, status);
+    }
+
+    public ArrayList<Loan> getAllLoans() throws SQLException {
+        return loanDAO.findAll();
+    }
+    
+    
+public int[] getDashboardStats() throws SQLException {
+    ArrayList<Book> books = bookDAO.findAll();
+    ArrayList<Member> members = memberDAO.findAll();
+
+    int totalTitles = books.size();
+    int totalCopies = books.stream().mapToInt(Book::getTotalCopies).sum();
+
+    int activeMembers = (int) members.stream()
+            .filter(Member::isActive).count();
+
+    int activeLoans = loanDAO.findByStatus(LoanStatus.ACTIVE).size();
+    int overdueLoans = loanDAO.countOverdueLoans();
+
+    int availableCopies = totalCopies - activeLoans;
+
+    return new int[]{
+        totalTitles, totalCopies, availableCopies,
+        activeMembers, activeLoans, overdueLoans
+    };
+}
+
 }
